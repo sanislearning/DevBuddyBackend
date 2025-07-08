@@ -31,8 +31,8 @@ async def crawl_docs(user_url):
         content_filter=LLMContentFilter(
             llm_config=LLMConfig(provider="gemini/gemini-2.0-flash", api_token=os.getenv("GOOGLE_API_KEY")),
             instruction="""
-                Extract tutorials, guides, explanations, documentation, and code examples.
-                Ignore navigation menus, repetitive headers/footers, and irrelevant boilerplate.
+                Extract tutorials, guides, explanations, documentation, boilerplate and code examples.
+                Ignore navigation menus and repetitive headers/footers.
                 Format the output in clean Markdown format.
             """,
             verbose=True
@@ -41,7 +41,7 @@ async def crawl_docs(user_url):
 
     config = CrawlerRunConfig(
         markdown_generator=markdown_generator,
-        deep_crawl_strategy=BFSDeepCrawlStrategy(max_pages=5, max_depth=2),
+        deep_crawl_strategy=BFSDeepCrawlStrategy(max_pages=20, max_depth=2),
         cache_mode="bypass"
     )
 
@@ -85,6 +85,7 @@ def create_rag_chain(vectordb):
         "You are DevBuddy, a helpful developer assistant. Use the provided documentation to answer questions about programming tools, libraries, and frameworks.\n"
         "When a user asks for a 'boilerplate', 'template', or 'example', respond with clean and working code that is typical for the use case.\n"
         "If the documentation includes example code, extract and adapt it. Be concise but complete.\n"
+        "Avoid asking the user to refer to the docs themselves."
         "Avoid saying you cannot do something if the answer is present in the context.\n"
         "If unsure, say so clearly instead of hallucinating.\n"
         "Context:\n{context}"

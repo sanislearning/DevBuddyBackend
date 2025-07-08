@@ -5,6 +5,8 @@ import asyncio
 import os
 from dotenv import load_dotenv
 import sys
+from fastapi.responses import JSONResponse
+from fastapi import Request
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -39,8 +41,6 @@ rag_chain=None
 class CrawlRequest(BaseModel): #pydantic class describing the return format for the endpoint
     url:str
 
-class AskRequest(BaseModel): #pydantic class describing the inputs to the model in from of questions
-    question:str
 
 @app.post("/crawl")
 async def crawl_docs_api(req:CrawlRequest):
@@ -50,9 +50,25 @@ async def crawl_docs_api(req:CrawlRequest):
     rag_chain=create_rag_chain(vectordb)
     return {"status":"Crawling and processing complete."}
 
-@app.post("/ask")
-async def ask_api(req:AskRequest):
+@app.post("/api/chat")
+async def chat_endpoint(request:Request):
+    global rag_chain
     if not rag_chain:
-        return {"answer":"Please crawl documentation first."}
-    response=rag_chain.invoke({"input":req.question})
-    return {"answer":response["answer"]}
+        return JSONResponse(content={"error":"Please crawl documentation first."},status_code=400)
+    try:
+        data=await request.json()
+        messages=data.get("messages",[])
+
+        #Get latest user message
+        user_message=next((m["content"] for m in reversed(messages) if m["role"]=="user"),None)
+
+        if not user_message:
+            return JSONResponse(content={"error":"No user message found."},status_code=400)
+        print(f"🧠 Received messages: {messages}")
+        print(f"💬 Latest user message: {user_message}")
+        response=rag_chain.invoke({"input":user_message})
+        print(response)
+        return {"role":"assistant","content":response["answer"]}
+
+    except Exception as e:
+        return JSONResponse(content={"error":str(e)},status_code=500)
