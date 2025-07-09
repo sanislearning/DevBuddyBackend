@@ -1,4 +1,3 @@
-``
 # DevBuddyBackend
 
 Backend for **DevBuddy**. Contains a fully working CLI version as well as the FastAPI backend.
