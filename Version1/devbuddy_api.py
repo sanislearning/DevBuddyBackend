@@ -7,11 +7,12 @@ from dotenv import load_dotenv
 import sys
 from fastapi.responses import JSONResponse
 from fastapi import Request
+import traceback  
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-from pureTerminal import crawl_docs,process_markdown,create_rag_chain
+from pureTerminal import crawl_docs, process_markdown, create_rag_chain, summarize_history, MAX_HISTORY_LENGTH
 #You can import all of the functions that you defined in the scripts
 #You can define how exactly your output are supposed to be via pydantic
 
@@ -50,25 +51,51 @@ async def crawl_docs_api(req:CrawlRequest):
     rag_chain=create_rag_chain(vectordb)
     return {"status":"Crawling and processing complete."}
 
+chat_memory = []  # Optional: could be per user
+
 @app.post("/api/chat")
-async def chat_endpoint(request:Request):
+async def chat_endpoint(request: Request):
     global rag_chain
     if not rag_chain:
-        return JSONResponse(content={"error":"Please crawl documentation first."},status_code=400)
+        return JSONResponse(content={"error": "Please crawl documentation first."}, status_code=400)
+    
     try:
-        data=await request.json()
-        messages=data.get("messages",[])
+        data = await request.json()
+        messages = data.get("messages", [])
 
-        #Get latest user message
-        user_message=next((m["content"] for m in reversed(messages) if m["role"]=="user"),None)
+        # ✅ Proper user-assistant pair extraction
+        chat_memory.clear()
+        for i in range(0, len(messages) - 1, 2):
+            user_msg = messages[i]
+            assistant_msg = messages[i + 1]
+            if user_msg["role"] == "user" and assistant_msg["role"] == "assistant":
+                chat_memory.append((user_msg["content"], assistant_msg["content"]))
 
-        if not user_message:
-            return JSONResponse(content={"error":"No user message found."},status_code=400)
-        print(f"🧠 Received messages: {messages}")
-        print(f"💬 Latest user message: {user_message}")
-        response=rag_chain.invoke({"input":user_message})
-        print(response)
-        return {"role":"assistant","content":response["answer"]}
+        if len(chat_memory) > MAX_HISTORY_LENGTH:
+            summary = summarize_history(chat_memory)
+            chat_log = f"Previous summary: {summary}"
+            chat_memory.clear()
+        else:
+            chat_log = "\n".join(f"User: {q}\nDevBuddy: {a}" for q, a in chat_memory)
+
+        latest_question = messages[-1]["content"]
+        response = rag_chain.invoke({
+            "input": f"{chat_log}\nUser: {latest_question}",
+            "chat_history": chat_log
+        })
+
+        answer = response["answer"]
+        chat_memory.append((latest_question, answer))
+
+        answer = response["answer"]
+        if not any(latest_question == q for q, _ in chat_memory):
+            chat_memory.append((latest_question, answer))
+
+        return {"role": "assistant", "content": answer}
+
 
     except Exception as e:
-        return JSONResponse(content={"error":str(e)},status_code=500)
+        traceback.print_exc()  # ✅ Print full error stack in console
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+

@@ -1,0 +1,18 @@
+[
+  [
+    "how langgraph works",
+    "LangGraph is an orchestration framework for building complex agentic systems. It is more low-level and controllable than LangChain agents, offering an expressive framework to handle company-specific tasks without restricting users to a single black-box cognitive architecture. LangGraph is designed with streaming workflows in mind and does not add overhead to your code. You can use LangSmith to inspect, monitor, and evaluate your LangGraph applications. LangGraph Platform helps turn your applications into production-ready APIs and Assistants."
+  ],
+  [
+    "how are you",
+    "I am DevBuddy, a helpful developer assistant. I'm here to help you with questions about programming tools, libraries, and frameworks using the provided documentation."
+  ],
+  [
+    "more on langgraph",
+    "LangGraph is an open-source library under the MIT license, so it is free to use. It integrates smoothly with LangChain but can also be used independently. It allows you to build stateful, multi-actor applications with LLMs and powers production-grade agents. LangGraph provides persistence, streaming, and other key features. If you're migrating from previous versions, there are resources available for upgrading to LangGraph memory and using BaseChatMessageHistory with LangGraph."
+  ],
+  [
+    "not really clear, be more specific",
+    "LangGraph is designed to help you build agentic workflows. It allows you to define the states of your application and the transitions between those states. This is useful for creating complex, multi-step agents that can handle a variety of tasks.\n\nKey aspects of LangGraph include:\n\n*   **Nodes:** Represent individual steps or actions in your workflow. These can be calls to a language model, a tool, or any other function.\n*   **Edges:** Define the connections between nodes, determining the flow of execution.\n*   **State:** Manages the data that is passed between nodes, allowing you to track the progress of your agent and make decisions based on its current state.\n\nLangGraph is more low-level and controllable than LangChain agents, giving you the flexibility to customize the behavior of your agents to meet the specific needs of your application. It is also designed for production environments, with features like persistence and streaming."
+  ]
+]

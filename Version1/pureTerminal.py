@@ -1,8 +1,10 @@
 import os
-import asyncio
 import sys
+import json
+import asyncio
 import traceback
 from dotenv import load_dotenv
+import traceback  
 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
@@ -19,13 +21,46 @@ from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 
+# ========== CONFIG ==========
 load_dotenv()
 os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
+HISTORY_PATH = "devbuddy_chat_history.json"
+MAX_HISTORY_LENGTH = 8
 
 if sys.platform.startswith('win'):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 
+# ========== MEMORY ==========
+def load_history():
+    if os.path.exists(HISTORY_PATH):
+        with open(HISTORY_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+def save_history(history):
+    with open(HISTORY_PATH, "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2)
+
+def summarize_history(history):
+    history_text = "\n\n".join(f"User: {q}\nDevBuddy: {a}" for q, a in history)
+    model = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+
+    summarizer_prompt = f"""
+You are a summarizer for DevBuddy, a helpful coding assistant.
+Summarize the following conversation, preserving the questions, answers, and context.
+
+Conversation:
+{history_text}
+
+Summary:
+""".strip()
+
+    response = model.invoke(summarizer_prompt)
+    return response.content.strip() if hasattr(response, "content") else response["answer"]
+
+
+# ========== CRAWLING + PROCESSING ==========
 async def crawl_docs(user_url):
     markdown_generator = DefaultMarkdownGenerator(
         content_filter=LLMContentFilter(
@@ -41,7 +76,7 @@ async def crawl_docs(user_url):
 
     config = CrawlerRunConfig(
         markdown_generator=markdown_generator,
-        deep_crawl_strategy=BFSDeepCrawlStrategy(max_pages=20, max_depth=2),
+        deep_crawl_strategy=BFSDeepCrawlStrategy(max_pages=1, max_depth=2),
         cache_mode="bypass"
     )
 
@@ -50,7 +85,7 @@ async def crawl_docs(user_url):
 
         combined_markdown = ""
         for result in results:
-            content = result.markdown.fit_markdown.strip()
+            content = result.markdown.strip()
             if content:
                 combined_markdown += f"# URL: {result.url}\n"
                 combined_markdown += f"**Depth**: {result.metadata.get('depth', 0)}\n\n"
@@ -79,7 +114,7 @@ def process_markdown(md_text):
 
 def create_rag_chain(vectordb):
     llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.7)
-    retriever = vectordb.as_retriever(search_type='similarity', k=10)
+    retriever = vectordb.as_retriever(search_type='mmr', search_kwargs={"k": 15, "fetch_k": 50})
 
     system_prompt = (
         "You are DevBuddy, a helpful developer assistant. Use the provided documentation to answer questions about programming tools, libraries, and frameworks.\n"
@@ -92,7 +127,7 @@ def create_rag_chain(vectordb):
     )
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
+        ("system", system_prompt + "\nHere is the conversation so far: \n{chat_history}"),
         ("human", "{input}")
     ])
 
@@ -100,8 +135,7 @@ def create_rag_chain(vectordb):
     return create_retrieval_chain(retriever, qa_chain)
 
 
-# === Main CLI Runner ===
-
+# ========== MAIN ==========
 def main():
     url = input("🔗 Enter the documentation URL to crawl: ").strip()
 
@@ -121,26 +155,33 @@ def main():
 
     print("✅ DevBuddy is ready! Type your questions below (type `exit` to quit):\n")
 
-    chat_history = [] #This one variable stores all of conversation
+    history = load_history()
 
     while True:
-        question = input("🧠 You: ")
-        if question.lower().strip() == "exit":
+        question = input("🧠 You: ").strip()
+        if question.lower() == "exit":
             print("👋 Goodbye!")
             break
 
-        chat_history.append({"role": "user", "content": question})
-        history = "\n".join(f"{msg['role'].capitalize()}: {msg['content']}" for msg in chat_history)
+        if len(history) > MAX_HISTORY_LENGTH:
+            summary = summarize_history(history)
+            history = [("Previous conversation summary", summary)]
+
+        chat_log = "\n\n".join(f"User: {q}\nDevBuddy: {a}" for q, a in history)
 
         try:
-            response = rag_chain.invoke({"input": history})
+            response = rag_chain.invoke({
+                "input": f"{chat_log}\nUser: {question}",
+                "chat_history": chat_log
+            })
             answer = response["answer"]
         except Exception as e:
             answer = "⚠️ Something went wrong while generating the answer."
             traceback.print_exc()
 
-        chat_history.append({"role": "assistant", "content": answer}) #Appends the chat history
-        print(f"🤖 DevBuddy: {answer}\n") #prints out the answer
+        print(f"🤖 DevBuddy: {answer}\n")
+        history.append((question, answer))
+        save_history(history)
 
 
 if __name__ == "__main__":
